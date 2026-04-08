@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S.</title>
+<script src="https://js.puter.com/v2/"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; cursor: none; }
+  canvas { display: block; }
+
+  /* Ambient glow behind sphere */
+  #ambient-glow {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 250px; height: 250px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(76,168,232,0.06) 0%, rgba(50,130,200,0.02) 40%, transparent 70%);
+    pointer-events: none; z-index: 1;
+    transition: all 1.5s ease;
+    filter: blur(40px);
+  }
+  #ambient-glow.speaking {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(76,168,232,0.12) 0%, rgba(50,130,200,0.04) 40%, transparent 70%);
+  }
+  #ambient-glow.sleep {
+    width: 100px; height: 100px;
+    background: radial-gradient(circle, rgba(76,168,232,0.015) 0%, transparent 50%);
+  }
+
+  /* Floating particles background */
+  .bg-particle {
+    position: fixed; border-radius: 50%; pointer-events: none; z-index: 0;
+    background: rgba(76,168,232,0.12);
+    animation: float-particle linear infinite;
+  }
+  @keyframes float-particle {
+    0% { transform: translateY(100vh) scale(0); opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+  }
+
+  /* Typing input bar */
+  #type-bar {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    z-index: 30; display: none; align-items: center;
+    background: rgba(5,10,20,0.85); border: 1px solid rgba(76,168,232,0.2);
+    border-radius: 25px; padding: 8px 20px; width: 500px; max-width: 90vw;
+    backdrop-filter: blur(10px);
+  }
+  #type-bar.visible { display: flex; }
+  #type-input {
+    flex: 1; background: none; border: none; outline: none;
+    color: rgba(76,168,232,0.9); font-family: 'Courier New', monospace;
+    font-size: 14px; letter-spacing: 1px;
+  }
+  #type-input::placeholder { color: rgba(76,168,232,0.3); }
+  #type-submit {
+    background: none; border: none; color: rgba(76,168,232,0.5);
+    font-size: 18px; cursor: pointer; padding: 0 5px;
+    transition: color 0.3s;
+  }
+  #type-submit:hover { color: rgba(76,168,232,1); }
+  .vignette { position: fixed; inset: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.7) 100%); pointer-events: none; z-index: 5; }
+  .scanline { position: fixed; inset: 0; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(76,168,232,0.006) 2px, rgba(76,168,232,0.006) 4px); pointer-events: none; z-index: 6; }
+  #title { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); color: rgba(76,168,232,0.6); font-size: 14px; letter-spacing: 12px; text-transform: uppercase; z-index: 20; pointer-events: none; text-shadow: 0 0 20px rgba(76,168,232,0.4); }
+  #status { position: fixed; top: 30px; left: 50%; transform: translateX(-50%); color: rgba(76,168,232,0.5); font-size: 11px; letter-spacing: 6px; text-transform: uppercase; z-index: 20; pointer-events: none; transition: all 0.6s ease; }
+  #response { position: fixed; top: 65px; left: 50%; transform: translateX(-50%); color: rgba(76,168,232,0.9); font-size: 15px; letter-spacing: 1px; z-index: 20; pointer-events: none; text-align: center; max-width: 55%; line-height: 1.7; text-shadow: 0 0 15px rgba(76,168,232,0.3); opacity: 0; transition: opacity 0.6s ease; }
+  #response.visible { opacity: 1; }
+  #transcript { position: fixed; bottom: 110px; left: 50%; transform: translateX(-50%); color: rgba(76,168,232,0.7); font-size: 13px; letter-spacing: 2px; z-index: 20; pointer-events: none; text-align: center; max-width: 70%; text-shadow: 0 0 10px rgba(76,168,232,0.3); transition: opacity 0.4s ease; }
+  #mic-status { position: fixed; bottom: 68px; left: 50%; transform: translateX(-50%); z-index: 20; pointer-events: none; display: flex; align-items: center; gap: 8px; }
+  #mic-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(76,168,232,0.5); box-shadow: 0 0 8px rgba(76,168,232,0.3); transition: all 0.4s ease; }
+  #mic-dot.active { background: rgba(76,200,255,0.8); box-shadow: 0 0 15px rgba(76,200,255,0.5); animation: blink 2s infinite; }
+  #mic-dot.speaking { background: rgba(60,140,220,0.9); box-shadow: 0 0 15px rgba(60,140,220,0.6); animation: pulse 0.6s infinite; }
+  #mic-dot.thinking { background: rgba(255,180,60,0.8); box-shadow: 0 0 15px rgba(255,180,60,0.5); }
+  #mic-label { color: rgba(76,168,232,0.4); font-size: 10px; letter-spacing: 3px; text-transform: uppercase; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.4)} }
+  #api-badge { position: fixed; top: 15px; left: 20px; z-index: 20; pointer-events: none; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; padding: 4px 10px; border-radius: 10px; color: rgba(76,168,232,0.6); border: 1px solid rgba(76,168,232,0.2); }
+  #memory-badge { position: fixed; top: 15px; left: 120px; z-index: 20; pointer-events: none; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; padding: 4px 10px; border-radius: 10px; color: rgba(180,120,255,0.5); border: 1px solid rgba(180,120,255,0.15); transition: all 0.5s; }
+  #memory-badge.active { color: rgba(180,120,255,0.8); border-color: rgba(180,120,255,0.4); }
+  #api-indicators { position: fixed; top: 40px; right: 20px; z-index: 20; pointer-events: none; display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+  .api-tag { font-size: 7px; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(76,168,232,0.2); transition: all 0.6s; }
+  .api-tag.active { color: rgba(76,168,232,0.5); text-shadow: 0 0 8px rgba(76,168,232,0.2); }
+  #visualizer { position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%); z-index: 15; pointer-events: none; display: flex; gap: 2px; align-items: flex-end; height: 15px; opacity: 0; transition: opacity 0.5s; }
+  #visualizer.active { opacity: 1; }
+  .viz-bar { width: 3px; background: rgba(76,168,232,0.5); border-radius: 1px; transition: height 0.08s; }
+  #interrupt-flash { position: fixed; inset: 0; z-index: 10; pointer-events: none; background: radial-gradient(ellipse at center, rgba(76,168,232,0.15) 0%, transparent 70%); opacity: 0; transition: opacity 0.3s; }
+  #interrupt-flash.active { opacity: 1; }
+
+  /* === CLEAN SCREEN — hide everything except sphere === */
+  #market-hud-left, #market-hud-right, #weather-hud, #news-ticker,
+  #api-badge, #memory-badge, #api-indicators, #title,
+  #status, #mic-status, #visualizer, #transcript,
+  .vignette, .scanline { display: none !important; }
+  #response { top: auto; bottom: 80px; font-size: 14px; max-width: 60%; color: rgba(180,220,255,0.85);
+    text-shadow: 0 0 20px rgba(76,168,232,0.15); letter-spacing: 0.5px; line-height: 1.8;
+    background: linear-gradient(180deg, transparent 0%, rgba(0,10,20,0.4) 50%, transparent 100%);
+    padding: 15px 25px; border-radius: 15px; }
+  #transcript { bottom: 55px !important; display: block !important; font-size: 11px;
+    color: rgba(76,168,232,0.3); letter-spacing: 2px; }
+
+  /* Activation overlay */
+  #activate-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: opacity 1s ease; }
+  #activate-overlay.hidden { opacity: 0; pointer-events: none; }
+  #activate-overlay h1 { color: rgba(76,168,232,0.8); font-size: 28px; letter-spacing: 15px; text-transform: uppercase; text-shadow: 0 0 30px rgba(76,168,232,0.5); margin-bottom: 30px; }
+  #activate-overlay p { color: rgba(76,168,232,0.4); font-size: 14px; letter-spacing: 4px; animation: pulse-text 2s infinite; }
+  @keyframes pulse-text { 0%,100%{opacity:0.4} 50%{opacity:1} }
+  #activate-circle { width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(76,168,232,0.3); display: flex; align-items: center; justify-content: center; margin-bottom: 30px; transition: all 0.4s; background: rgba(76,168,232,0.05); }
+  #activate-overlay:hover #activate-circle { border-color: rgba(76,168,232,0.7); box-shadow: 0 0 50px rgba(76,168,232,0.3); transform: scale(1.05); }
+  #activate-circle svg { width: 50px; height: 50px; }
+  #activate-overlay .sub { color: rgba(76,168,232,0.25); font-size: 10px; letter-spacing: 3px; margin-top: 15px; }
+</style>
+</head>
+<body>
+<div id="activate-overlay">
+  <div id="activate-circle"><svg viewBox="0 0 24 24" fill="none" stroke="rgba(76,168,232,0.7)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16" fill="rgba(76,168,232,0.5)"/></svg></div>
+  <h1>J.A.R.V.I.S</h1>
+  <p>Click anywhere to activate</p>
+  <div class="sub">Say "Jarvis" anytime to interrupt</div>
+</div>
+<div class="vignette"></div>
+<div class="scanline"></div>
+<div id="interrupt-flash"></div>
+<div id="status">S Y S T E M &nbsp; R E A D Y</div>
+<div id="api-badge" class="online">claude ai</div>
+<div id="memory-badge">memory</div>
+<div id="weather-hud"><div class="loc">--</div><div class="temp">--</div><div class="desc">loading...</div></div>
+<div id="api-indicators"></div>
+
+<!-- LIVE MARKET HUD -->
+<div id="market-hud-left">
+  <div class="hud-section-title"><span class="hud-live-dot"></span>indices</div>
+  <div id="hud-indices"></div>
+  <div class="hud-section-title"><span class="hud-live-dot"></span>crypto</div>
+  <div id="hud-crypto"></div>
+</div>
+<div id="market-hud-right">
+  <div class="hud-section-title">commodities</div>
+  <div id="hud-commodities"></div>
+  <div class="hud-section-title">forex</div>
+  <div id="hud-forex"></div>
+</div>
+
+<div id="ambient-glow"></div>
+<div id="response"></div>
+<div id="transcript"></div>
+<div id="type-bar">
+  <input type="text" id="type-input" placeholder="Type a command..." autocomplete="off">
+  <button id="type-submit">&#10148;</button>
+</div>
+<div id="visualizer"></div>
+<div id="mic-status"><div id="mic-dot"></div><span id="mic-label">standby</span></div>
+<div id="title">J . A . R . V . I . S</div>
+<div id="news-ticker">
+  <div id="news-ticker-label"><span class="hud-live-dot"></span>live</div>
+  <div id="news-ticker-content">Initializing live feeds...</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// =============================================
+// === 3D SCENE — Identical to ethanplusai orb ===
+// =============================================
+var isShutdown = false;
+const N=2000, MAX_LINES=8000;
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,1,1000);
+camera.position.z=80;
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth,innerHeight);
+renderer.setClearColor(0x050508,1);
+document.body.appendChild(renderer.domElement);
+
+// Particles
+const geo=new THREE.BufferGeometry();
+const pos=new Float32Array(N*3);
+const vel=new Float32Array(N*3);
+const phase=new Float32Array(N);
+for(let i=0;i<N;i++){
+  const theta=Math.random()*Math.PI*2;
+  const phi=Math.acos(2*Math.random()-1);
+  const r=Math.pow(Math.random(),0.5)*25;
+  pos[i*3]=r*Math.sin(phi)*Math.cos(theta);
+  pos[i*3+1]=r*Math.sin(phi)*Math.sin(theta);
+  pos[i*3+2]=r*Math.cos(phi);
+  phase[i]=Math.random()*1000;
+}
+geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+
+const pMat=new THREE.PointsMaterial({
+  color:0x4ca8e8, size:0.4, transparent:true, opacity:0.6,
+  sizeAttenuation:true, blending:THREE.AdditiveBlending, depthWrite:false
+});
+const pts=new THREE.Points(geo,pMat);
+scene.add(pts);
+
+// Connection lines
+const linePos=new Float32Array(MAX_LINES*6);
+const lineGeo=new THREE.BufferGeometry();
+lineGeo.setAttribute('position',new THREE.BufferAttribute(linePos,3));
+lineGeo.setDrawRange(0,0);
+const lineMat=new THREE.LineBasicMaterial({
+  color:0x4ca8e8, transparent:true, opacity:0.0,
+  blending:THREE.AdditiveBlending, depthWrite:false
+});
+const lns=new THREE.LineSegments(lineGeo,lineMat);
+scene.add(lns);
+
+let sphereEnergy=1,targetEnergy=1,isSpeaking=false,isListening=false,isThinking=false;
+let targetRadius=28,currentRadius=28;
+let targetSpeed=0.2,currentSpeed=0.2;
+let targetBright=0.5,currentBright=0.5;
+let targetSize=0.35,currentSize=0.35;
+let lineAmount=0,targetLineAmount=0.15;
+let lineDistance=8;
+let spinX=0,spinY=0,spinZ=0;
+let transitionEnergy=0,lastOrbState='idle';
+let cloudZ=0,cloudZVel=0;
+
+function getOrbState(){
+  if(isShutdown) return 'idle';
+  if(isSpeaking) return 'speaking';
+  if(isThinking) return 'thinking';
+  if(isListening) return 'listening';
+  return 'idle';
+}
+
+const clk=new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const t=clk.getElapsedTime();
+  const orbState=getOrbState();
+
+  // State targets (matching ethanplusai exactly)
+  switch(orbState){
+    case 'idle':    targetRadius=28;targetSpeed=0.2;targetBright=0.5;targetSize=0.35;targetLineAmount=0.15;break;
+    case 'listening':targetRadius=22;targetSpeed=0.3;targetBright=0.65;targetSize=0.4;targetLineAmount=0.4;break;
+    case 'thinking':targetRadius=16;targetSpeed=0.5;targetBright=0.7;targetSize=0.3;targetLineAmount=1.0;break;
+    case 'speaking':targetRadius=18;targetSpeed=0.2;targetBright=0.7;targetSize=0.4;targetLineAmount=0.8;break;
+  }
+
+  currentRadius+=(targetRadius-currentRadius)*0.02;
+  currentSpeed+=(targetSpeed-currentSpeed)*0.02;
+  currentBright+=(targetBright-currentBright)*0.02;
+  currentSize+=(targetSize-currentSize)*0.02;
+  lineAmount+=(targetLineAmount-lineAmount)*0.02;
+
+  // Transition tumble
+  if(orbState!==lastOrbState){transitionEnergy=1.0;lastOrbState=orbState;}
+  transitionEnergy*=0.985;
+  if(transitionEnergy>0.05){
+    spinX+=transitionEnergy*0.012*Math.sin(t*1.7);
+    spinY+=transitionEnergy*0.015;
+    spinZ+=transitionEnergy*0.008*Math.cos(t*1.3);
+  }
+
+  // Depth Z breathing
+  let zTarget=Math.sin(t*0.12)*8;
+  if(orbState==='thinking')zTarget=Math.sin(t*0.3)*15+Math.sin(t*0.9)*6;
+  else if(orbState==='speaking')zTarget=Math.sin(t*0.15)*6;
+  cloudZVel+=(zTarget-cloudZ)*0.008;
+  cloudZVel*=0.94;
+  cloudZ+=cloudZVel;
+
+  pts.rotation.x=spinX;pts.rotation.y=spinY;pts.rotation.z=spinZ;
+  pts.position.z=cloudZ;
+  lns.rotation.x=spinX;lns.rotation.y=spinY;lns.rotation.z=spinZ;
+  lns.position.z=cloudZ;
+
+  // Update particles with velocity
+  const a=pos;
+  for(let i=0;i<N;i++){
+    const i3=i*3;
+    let x=a[i3],y=a[i3+1],z=a[i3+2];
+    const px=phase[i];
+    vel[i3]+=Math.sin(t*0.05+px)*0.001*currentSpeed;
+    vel[i3+1]+=Math.cos(t*0.06+px*1.3)*0.001*currentSpeed;
+    vel[i3+2]+=Math.sin(t*0.055+px*0.7)*0.001*currentSpeed;
+    vel[i3]+=Math.sin(t*0.02+px*2.1+y*0.1)*0.0008*currentSpeed;
+    vel[i3+1]+=Math.cos(t*0.025+px*1.7+z*0.1)*0.0008*currentSpeed;
+    vel[i3+2]+=Math.sin(t*0.022+px*0.9+x*0.1)*0.0008*currentSpeed;
+    const dist=Math.sqrt(x*x+y*y+z*z)||0.01;
+    const pull=Math.max(0,dist-currentRadius)*0.002+0.0003;
+    vel[i3]-=(x/dist)*pull;
+    vel[i3+1]-=(y/dist)*pull;
+    vel[i3+2]-=(z/dist)*pull;
+    if(orbState==='speaking'){
+      const pulse=Math.sin(t*8+px);
+      vel[i3]+=(x/dist)*0.006*pulse;
+      vel[i3+1]+=(y/dist)*0.006*pulse;
+    }
+    vel[i3]*=0.992;vel[i3+1]*=0.992;vel[i3+2]*=0.992;
+    a[i3]+=vel[i3];a[i3+1]+=vel[i3+1];a[i3+2]+=vel[i3+2];
+  }
+  geo.attributes.position.needsUpdate=true;
+
+  // Update connection lines
+  if(lineAmount>0.01){
+    const la=linePos;
+    let lineCount=0;
+    const maxDist=lineDistance;
+    const maxDistSq=maxDist*maxDist;
+    const step=Math.max(1,Math.floor(N/600));
+    for(let i=0;i<N&&lineCount<MAX_LINES;i+=step){
+      const i3=i*3;const x1=a[i3],y1=a[i3+1],z1=a[i3+2];
+      for(let j=i+step;j<N&&lineCount<MAX_LINES;j+=step){
+        const j3=j*3;
+        const dx=a[j3]-x1,dy=a[j3+1]-y1,dz=a[j3+2]-z1;
+        if(dx*dx+dy*dy+dz*dz<maxDistSq){
+          const idx=lineCount*6;
+          la[idx]=x1;la[idx+1]=y1;la[idx+2]=z1;
+          la[idx+3]=a[j3];la[idx+4]=a[j3+1];la[idx+5]=a[j3+2];
+          lineCount++;
+        }
+      }
+    }
+    lineGeo.setDrawRange(0,lineCount*2);
+    lineGeo.attributes.position.needsUpdate=true;
+    lineMat.opacity=lineAmount*0.12;
+  } else {
+    lineGeo.setDrawRange(0,0);
+  }
+
+  pMat.opacity=currentBright;
+  pMat.size=currentSize;
+
+  if(orbState==='thinking'){pMat.color.lerp(new THREE.Color(0x6ec4ff),0.015);lineMat.color.lerp(new THREE.Color(0x6ec4ff),0.015);}
+  else if(orbState==='speaking'){pMat.color.lerp(new THREE.Color(0x5ab8f0),0.015);lineMat.color.lerp(new THREE.Color(0x5ab8f0),0.015);}
+  else{pMat.color.lerp(new THREE.Color(0x4ca8e8),0.015);lineMat.color.lerp(new THREE.Color(0x4ca8e8),0.015);}
+
+  camera.position.x=Math.sin(t*0.02)*5;
+  camera.position.y=Math.cos(t*0.03)*3;
+  camera.lookAt(0,0,cloudZ*0.2);
+  renderer.render(scene,camera);
+}
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+animate();
+
+// Floating background particles
+function createBgParticles(){
+  for(let i=0;i<15;i++){
+    const p=document.createElement('div');
+    p.className='bg-particle';
+    const size=Math.random()*2+1;
+    p.style.width=size+'px';p.style.height=size+'px';
+    p.style.left=Math.random()*100+'%';
+    p.style.animationDuration=(15+Math.random()*25)+'s';
+    p.style.animationDelay=Math.random()*20+'s';
+    document.body.appendChild(p);
+  }
+}
+createBgParticles();
+
+// =============================================
+// === DOM ===
+// =============================================
+const $=id=>document.getElementById(id);
+const statusEl=$('status'),responseEl=$('response'),transcriptEl=$('transcript'),micDot=$('mic-dot'),micLabel=$('mic-label'),overlay=$('activate-overlay'),vizContainer=$('visualizer'),apiIndicators=$('api-indicators'),interruptFlash=$('interrupt-flash'),memoryBadge=$('memory-badge'),tickerContent=$('news-ticker-content'),weatherHud=$('weather-hud');
+for(let i=0;i<24;i++){const b=document.createElement('div');b.className='viz-bar';b.style.height='2px';vizContainer.appendChild(b);}
+
+// =============================================
+// === LIVE MARKET DATA HUD ===
+// =============================================
+const MarketHUD = {
+  indices: {},
+  crypto: {},
+  commodities: {},
+  forex: {},
+
+  async fetchCrypto() {
+    try {
+      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,dogecoin,cardano,ripple&vs_currencies=usd&include_24hr_change=true');
+      const d = await r.json();
+      this.crypto = {};
+      for (const [coin, data] of Object.entries(d)) {
+        this.crypto[coin] = { price: data.usd, change: data.usd_24h_change || 0 };
+      }
+    } catch(e) {}
+  },
+
+  async fetchIndices() {
+    // Use Yahoo Finance for major indices
+    const symbols = ['^GSPC','^IXIC','^DJI'];
+    const names = {'%5EGSPC':'S&P 500','%5EIXIC':'NASDAQ','%5EDJI':'DOW'};
+    for (const sym of symbols) {
+      try {
+        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`);
+        const d = await r.json();
+        const meta = d.chart?.result?.[0]?.meta;
+        if (meta) {
+          const price = meta.regularMarketPrice;
+          const prev = meta.chartPreviousClose;
+          const change = ((price - prev) / prev * 100).toFixed(2);
+          const encoded = encodeURIComponent(sym);
+          this.indices[names[encoded] || sym] = { price: price.toFixed(2), change: parseFloat(change) };
+        }
+      } catch(e) {}
+    }
+  },
+
+  async fetchForex() {
+    try {
+      const r = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
+      const d = await r.json();
+      if (d.usd) {
+        this.forex = {
+          'EUR/USD': { rate: (1/d.usd.eur).toFixed(4) },
+          'GBP/USD': { rate: (1/d.usd.gbp).toFixed(4) },
+          'USD/JPY': { rate: d.usd.jpy.toFixed(2) },
+          'USD/CAD': { rate: d.usd.cad.toFixed(4) },
+        };
+      }
+    } catch(e) {}
+  },
+
+  async fetchCommodities() {
+    // Gold & Silver via metals API (free)
+    try {
+      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=tether-gold,pax-gold&vs_currencies=usd&include_24hr_change=true');
+      const d = await r.json();
+      if (d['pax-gold']) {
+        this.commodities['GOLD'] = { price: d['pax-gold'].usd.toFixed(2), change: d['pax-gold'].usd_24h_change?.toFixed(2) || 0 };
+      }
+    } catch(e) {}
+  },
+
+  async refreshAll() {
+    await Promise.all([this.fetchCrypto(), this.fetchIndices(), this.fetchForex(), this.fetchCommodities()]);
+    this.render();
+  },
+
+  render() {
+    // Indices
+    let html = '';
+    for (const [name, data] of Object.entries(this.indices)) {
+      const dir = data.change >= 0 ? 'up' : 'down';
+      const arrow = data.change >= 0 ? '&#9650;' : '&#9660;';
+      html += `<div class="hud-item"><span class="label">${name}</span><span class="value">$${Number(data.price).toLocaleString()}</span><span class="change ${dir}">${arrow} ${Math.abs(data.change)}%</span></div>`;
+    }
+    $('hud-indices').innerHTML = html || '<div class="hud-item"><span class="label">loading...</span></div>';
+
+    // Crypto
+    html = '';
+    const cryptoNames = {bitcoin:'BTC',ethereum:'ETH',solana:'SOL',dogecoin:'DOGE',cardano:'ADA',ripple:'XRP'};
+    for (const [coin, data] of Object.entries(this.crypto)) {
+      const dir = data.change >= 0 ? 'up' : 'down';
+      const arrow = data.change >= 0 ? '&#9650;' : '&#9660;';
+      html += `<div class="hud-item"><span class="label">${cryptoNames[coin]||coin}</span><span class="value">$${Number(data.price).toLocaleString()}</span><span class="change ${dir}">${arrow} ${Math.abs(data.change).toFixed(1)}%</span></div>`;
+    }
+    $('hud-crypto').innerHTML = html || '<div class="hud-item"><span class="label">loading...</span></div>';
+
+    // Commodities
+    html = '';
+    for (const [name, data] of Object.entries(this.commodities)) {
+      html += `<div class="hud-item"><span class="label">${name}</span><span class="value">$${Number(data.price).toLocaleString()}</span></div>`;
+    }
+    $('hud-commodities').innerHTML = html || '<div class="hud-item"><span class="label">loading...</span></div>';
+
+    // Forex
+    html = '';
+    for (const [pair, data] of Object.entries(this.forex)) {
+      html += `<div class="hud-item"><span class="label">${pair}</span><span class="value">${data.rate}</span></div>`;
+    }
+    $('hud-forex').innerHTML = html || '<div class="hud-item"><span class="label">loading...</span></div>';
+  }
+};
+
+// =============================================
+// === LIVE WEATHER HUD ===
+// =============================================
+async function updateWeatherHUD() {
+  try {
+    const r = await fetch('https://wttr.in/?format=j1');
+    const d = await r.json();
+    const c = d.current_condition[0], l = d.nearest_area[0];
+    weatherHud.querySelector('.loc').textContent = `${l.areaName[0].value}, ${l.country[0].value}`;
+    weatherHud.querySelector('.temp').textContent = `${c.temp_F}°F / ${c.temp_C}°C`;
+    weatherHud.querySelector('.desc').textContent = c.weatherDesc[0].value;
+  } catch(e) {}
+}
+
+// =============================================
+// === LIVE NEWS (multiple sources) ===
+// =============================================
+let cachedNews = { items: [], lastFetch: 0 };
+
+const NEWS_FEEDS = {
+  'BBC':       'http://feeds.bbci.co.uk/news/rss.xml',
+  'Reuters':   'https://feeds.reuters.com/reuters/topNews',
+  'CNN':       'http://rss.cnn.com/rss/edition.rss',
+  'NYT':       'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',
+  'AP News':   'https://rsshub.app/apnews/topics/apf-topnews',
+  'TechCrunch':'https://techcrunch.com/feed/',
+  'Ars Tech':  'https://feeds.arstechnica.com/arstechnica/index',
+  'NPR':       'https://feeds.npr.org/1001/rss.xml',
+  'Guardian':  'https://www.theguardian.com/world/rss',
+  'Al Jazeera':'https://www.aljazeera.com/xml/rss/all.xml',
+};
+
+async function fetchFeed(name, url) {
+  try {
+    const r = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
+    const d = await r.json();
+    if (d.status === 'ok' && d.items) {
+      return d.items.slice(0, 5).map(item => ({ title: item.title, source: name, date: item.pubDate }));
+    }
+  } catch(e) {}
+  return [];
+}
+
+async function refreshAllNews() {
+  flashApi('news');
+  const promises = Object.entries(NEWS_FEEDS).map(([name, url]) => fetchFeed(name, url));
+  const results = await Promise.all(promises);
+  cachedNews.items = results.flat().sort(() => Math.random() - 0.5);
+  cachedNews.lastFetch = Date.now();
+  updateTicker();
+}
+
+function updateTicker() {
+  if (cachedNews.items.length === 0) return;
+  const items = cachedNews.items.slice(0, 30);
+  tickerContent.innerHTML = items.map(n =>
+    `<span class="ticker-source">${n.source}</span><span>${n.title}</span>`
+  ).join('<span class="ticker-dot">&bull;</span>');
+}
+
+async function getNews(query) {
+  flashApi('news');
+  if (Date.now() - cachedNews.lastFetch > 3 * 60 * 1000) await refreshAllNews();
+  const q = query.toLowerCase();
+  let filtered = cachedNews.items;
+  if (/tech/i.test(q)) filtered = cachedNews.items.filter(n => /TechCrunch|Ars/i.test(n.source));
+  const top = (filtered.length ? filtered : cachedNews.items).slice(0, 5);
+  const headlines = top.map((n, i) => `${n.source}: ${n.title}`).join('. ');
+  return `Here are the latest headlines, sir. ${headlines}. Want me to go deeper on any of these?`;
+}
+
+// =============================================
+// === ALL APIs ===
+// =============================================
+const APIs={weather:{name:'weather'},wikipedia:{name:'wikipedia'},dictionary:{name:'dictionary'},jokes:{name:'jokes'},facts:{name:'facts'},currency:{name:'currency'},location:{name:'location'},trivia:{name:'trivia'},quotes:{name:'quotes'},numbers:{name:'numbers'},catfacts:{name:'catfacts'},dogfacts:{name:'dogfacts'},advice:{name:'advice'},bored:{name:'bored'},countries:{name:'countries'},spacex:{name:'spacex'},pokemon:{name:'pokemon'},github:{name:'github'},crypto:{name:'crypto'},news:{name:'news'},stocks:{name:'stocks'},sports:{name:'sports'},google:{name:'google'},computer:{name:'computer'}};
+
+// =============================================
+// === GOOGLE WEB SEARCH ===
+// =============================================
+async function googleSearch(query) {
+  flashApi('google');
+  const searchQuery = query.replace(/google|search|search for|look up|find|search the web for|web search/gi, '').trim();
+  if (!searchQuery) return null;
+
+  // Use Google's public search via SerpAPI-style free endpoint or Google Custom Search alternative
+  // We'll use DuckDuckGo instant answer API (free, no key, CORS-friendly) + Google as fallback via puter
+  try {
+    // Try DuckDuckGo instant answers first (fast, free, no key)
+    const r = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(searchQuery)}&format=json&no_redirect=1&no_html=1`);
+    const d = await r.json();
+
+    // Check for instant answer
+    if (d.AbstractText) {
+      return `${d.AbstractText} Source: ${d.AbstractSource || 'DuckDuckGo'}.`;
+    }
+    // Check for answer box
+    if (d.Answer) {
+      return d.Answer;
+    }
+    // Check for related topics
+    if (d.RelatedTopics && d.RelatedTopics.length > 0) {
+      const topics = d.RelatedTopics.filter(t => t.Text).slice(0, 3);
+      if (topics.length > 0) {
+        return topics.map(t => t.Text).join(' ');
+      }
+    }
+  } catch(e) { console.warn('DuckDuckGo error:', e); }
+
+  // Fallback: use Claude AI with web search context in the prompt
+  try {
+    const searchPrompt = `The user asked me to search the web for: "${searchQuery}". Based on your knowledge, provide a concise, factual answer (2-3 sentences max). Speak as JARVIS addressing the user as "sir".`;
+    const response = await puter.ai.chat(
+      [{ role: 'system', content: getSysPrompt() }, { role: 'user', content: searchPrompt }],
+      { model: 'claude-sonnet-4-6', stream: false }
+    );
+    const reply = typeof response === 'string' ? response :
+      response?.message?.content?.[0]?.text || response?.message?.content || response?.text || String(response);
+    return reply;
+  } catch(e) {}
+
+  return null;
+}
+
+// Open Google in a new tab for visual searches
+function openGoogleSearch(query) {
+  const searchQuery = query.replace(/google|search|open google|show me|images of|pictures of/gi, '').trim();
+  openURL(`https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`);
+  return `I've opened a Google search for "${searchQuery}", sir.`;
+}
+// =============================================
+// === COMPUTER CONTROL ===
+// =============================================
+const WEBSITES = {
+  'youtube': 'https://www.youtube.com',
+  'google': 'https://www.google.com',
+  'gmail': 'https://mail.google.com',
+  'google maps': 'https://maps.google.com',
+  'maps': 'https://maps.google.com',
+  'google drive': 'https://drive.google.com',
+  'google docs': 'https://docs.google.com',
+  'netflix': 'https://www.netflix.com',
+  'spotify': 'https://open.spotify.com',
+  'twitter': 'https://twitter.com',
+  'x': 'https://twitter.com',
+  'reddit': 'https://www.reddit.com',
+  'instagram': 'https://www.instagram.com',
+  'facebook': 'https://www.facebook.com',
+  'tiktok': 'https://www.tiktok.com',
+  'amazon': 'https://www.amazon.com',
+  'twitch': 'https://www.twitch.tv',
+  'discord': 'https://discord.com/app',
+  'github': 'https://github.com',
+  'linkedin': 'https://www.linkedin.com',
+  'whatsapp': 'https://web.whatsapp.com',
+  'chat gpt': 'https://chat.openai.com',
+  'chatgpt': 'https://chat.openai.com',
+  'claude': 'https://claude.ai',
+  'wikipedia': 'https://www.wikipedia.org',
+  'apple music': 'https://music.apple.com',
+  'hulu': 'https://www.hulu.com',
+  'disney plus': 'https://www.disneyplus.com',
+  'disney+': 'https://www.disneyplus.com',
+  'hbo': 'https://www.max.com',
+  'max': 'https://www.max.com',
+  'yahoo': 'https://www.yahoo.com',
+  'yahoo mail': 'https://mail.yahoo.com',
+  'outlook': 'https://outlook.live.com',
+  'bing': 'https://www.bing.com',
+  'pinterest': 'https://www.pinterest.com',
+  'snapchat': 'https://web.snapchat.com',
+  'ebay': 'https://www.ebay.com',
+  'craigslist': 'https://www.craigslist.org',
+  'stack overflow': 'https://stackoverflow.com',
+  'stackoverflow': 'https://stackoverflow.com',
+  'notion': 'https://www.notion.so',
+  'figma': 'https://www.figma.com',
+  'canva': 'https://www.canva.com',
+  'zoom': 'https://zoom.us',
+  'teams': 'https://teams.microsoft.com',
+  'slack': 'https://slack.com',
+  'trello': 'https://trello.com',
+  'soundcloud': 'https://soundcloud.com',
+  'pandora': 'https://www.pandora.com',
+  'cnn': 'https://www.cnn.com',
+  'bbc': 'https://www.bbc.com',
+  'espn': 'https://www.espn.com',
+  'weather': 'https://weather.com',
+  'news': 'https://news.google.com',
+  'google news': 'https://news.google.com',
+  'roblox': 'https://www.roblox.com',
+  'cool math games': 'https://www.coolmathgames.com',
+};
+
+// Open URLs reliably without popup blocker issues
+function openURL(url) {
+  // First try the control server (opens in real browser, not popup)
+  jarvisControl('open_url', url).catch(() => {
+    // Fallback: anchor click method
+    try {
+      const a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.rel = 'noopener';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => document.body.removeChild(a), 100);
+    } catch(e) {
+      window.open(url, '_blank', 'noopener');
+    }
+  });
+}
+
+// ── JARVIS Computer Control ───────────────────────────────────────────────────
+const CONTROL_SERVER = 'http://localhost:8888';
+let controlServerOnline = false;
+
+async function jarvisControl(command, args = '', extra = {}) {
+  const res = await fetch(CONTROL_SERVER, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, args, ...extra })
+  });
+  const data = await res.json();
+  return data;
+}
+
+// Ping control server on load
+fetch(CONTROL_SERVER).then(() => { controlServerOnline = true; }).catch(() => { controlServerOnline = false; });
+
+// ── Handle computer control commands ─────────────────────────────────────────
+function handleComputerControl(lower) {
+  // Volume
+  const volMatch = lower.match(/(?:set|turn|change)?\s*volume\s*(?:to|up|down)?\s*(\d+)/i);
+  if (volMatch) {
+    jarvisControl('volume', volMatch[1]);
+    return `Volume set to ${volMatch[1]} percent, sir.`;
+  }
+  if (/volume up|turn it up|louder/i.test(lower)) {
+    jarvisControl('applescript', 'set volume output volume (output volume of (get volume settings) + 10)');
+    return 'Volume up, sir.';
+  }
+  if (/volume down|turn it down|quieter|lower the volume/i.test(lower)) {
+    jarvisControl('applescript', 'set volume output volume (output volume of (get volume settings) - 10)');
+    return 'Volume down, sir.';
+  }
+  if (/\bmute\b/i.test(lower) && !/unmute/i.test(lower)) {
+    jarvisControl('mute');
+    return 'Muted, sir.';
+  }
+  if (/unmute/i.test(lower)) {
+    jarvisControl('unmute');
+    return 'Unmuted, sir.';
+  }
+
+  // Screen
+  if (/lock\s*(screen|computer|mac)/i.test(lower)) {
+    jarvisControl('lock_screen');
+    return 'Locking the screen, sir.';
+  }
+  if (/sleep\s*(computer|mac|system)/i.test(lower)) {
+    jarvisControl('sleep');
+    return 'Putting the Mac to sleep, sir.';
+  }
+  if (/take a screenshot|screenshot/i.test(lower)) {
+    jarvisControl('screenshot');
+    return 'Screenshot saved to your Desktop, sir.';
+  }
+
+  // Tabs
+  if (/close\s*(this\s*)?(tab|window)/i.test(lower)) {
+    jarvisControl('close_tab');
+    return 'Closing the tab, sir.';
+  }
+  if (/new tab/i.test(lower)) {
+    jarvisControl('new_tab');
+    return 'New tab opened, sir.';
+  }
+
+  // Battery
+  if (/battery|charge level/i.test(lower)) {
+    return jarvisControl('battery').then(r => {
+      const match = r.message.match(/(\d+)%/);
+      return match ? `Battery is at ${match[1]} percent, sir.` : 'Could not read battery level, sir.';
+    });
+  }
+
+  // Open native Mac apps
+  const appMap = {
+    'safari': 'Safari', 'chrome': 'Google Chrome', 'firefox': 'Firefox',
+    'finder': 'Finder', 'terminal': 'Terminal', 'calculator': 'Calculator',
+    'calendar': 'Calendar', 'reminders': 'Reminders', 'notes': 'Notes',
+    'mail': 'Mail', 'messages': 'Messages', 'facetime': 'FaceTime',
+    'maps': 'Maps', 'photos': 'Photos', 'music': 'Music',
+    'spotify': 'Spotify', 'slack': 'Slack', 'zoom': 'Zoom',
+    'xcode': 'Xcode', 'vscode': 'Visual Studio Code', 'vs code': 'Visual Studio Code',
+    'word': 'Microsoft Word', 'excel': 'Microsoft Excel', 'powerpoint': 'Microsoft PowerPoint',
+    'system settings': 'System Preferences', 'system preferences': 'System Preferences',
+    'activity monitor': 'Activity Monitor', 'disk utility': 'Disk Utility',
+  };
+  const openMatch = lower.match(/open\s+(?:the\s+)?(.+?)(?:\s+app)?(?:\s+please)?$/i);
+  if (openMatch) {
+    const appName = openMatch[1].trim().toLowerCase();
+    for (const [key, name] of Object.entries(appMap)) {
+      if (appName.includes(key)) {
+        jarvisControl('open_app', name);
+        return `Opening ${name}, sir.`;
+      }
+    }
+  }
+
+  return null; // not a computer control command
+}
+
+function computerControl(q) {
+  const name = Memory.getGreeting();
+  const lower = q.toLowerCase();
+
+  // Try the richer handleComputerControl first (uses local server)
+  const serverResult = handleComputerControl(lower);
+  if (serverResult) { flashApi('computer'); return serverResult; }
+
+  // Check if this is a computer control command at all
+  if (!/open |go to |launch |start |pull up |bring up |load |take me to |navigate to |play |search .+ on |set (a )?(timer|alarm|reminder)|copy (that|this)|dim |brighten |dark mode|light mode|full\s?screen|scroll |close (this|the) (tab|page)|maximize|minimize|volume|mute|screenshot|battery/.test(lower)) return null;
+
+  flashApi('computer');
+
+  // Open website or app
+  const openMatch = lower.match(/(?:open|go to|launch|start|pull up|bring up|load|take me to|navigate to|show me)\s+(.+)/);
+  if (openMatch) {
+    let target = openMatch[1].replace(/\s*(please|for me|on the browser|in the browser|in chrome|on chrome|in a new tab|now|the app|app)\s*/gi, '').trim();
+
+    // Check native Mac apps FIRST — use control server to open them
+    for (const [key, app] of Object.entries(MAC_APPS)) {
+      if (target.includes(key) || key.includes(target)) {
+        // Try server open first, fall back to URL scheme
+        jarvisControl('open_url', app.url).catch(() => { openURL(app.url); });
+        return app.msg;
+      }
+    }
+
+    // Check known websites
+    for (const [key, url] of Object.entries(WEBSITES)) {
+      if (target.includes(key) || key.includes(target)) {
+        openURL(url);
+        return `Opening ${key.charAt(0).toUpperCase() + key.slice(1)} for you, sir.`;
+      }
+    }
+
+    // If not a known site, try as a URL or search
+    if (/\.(com|org|net|io|co|tv|gg|me|dev|app|ai)/.test(target)) {
+      const url = target.startsWith('http') ? target : `https://${target}`;
+      openURL(url);
+      return `Opening ${target} for you, sir.`;
+    }
+
+    // Open as Google search
+    openURL(`https://www.google.com/search?q=${encodeURIComponent(target)}`);
+    return `I've searched for "${target}" in your browser, sir.`;
+  }
+
+  // Close tab: "close this tab", "close the tab", "close tab"
+  if (/close (this |the |that )?(tab|page|window)/.test(lower)) {
+    try { window.close(); } catch(e) {}
+    // If window.close didn't work (most browsers block it), simulate Cmd+W
+    return `Closing the tab, sir.`;
+  }
+
+  // Native Mac apps via URL schemes
+  const MAC_APPS = {
+    'calculator': { url: 'https://www.google.com/search?q=calculator', msg: 'Opening calculator, sir.' },
+    'mail': { url: 'mailto:', msg: 'Opening Mail, sir.' },
+    'email': { url: 'mailto:', msg: 'Opening Mail, sir.' },
+    'messages': { url: 'imessage://', msg: 'Opening Messages, sir.' },
+    'imessage': { url: 'imessage://', msg: 'Opening Messages, sir.' },
+    'facetime': { url: 'facetime://', msg: 'Opening FaceTime, sir.' },
+    'maps': { url: 'maps://', msg: 'Opening Maps, sir.' },
+    'apple maps': { url: 'maps://', msg: 'Opening Apple Maps, sir.' },
+    'apple music': { url: 'music://', msg: 'Opening Apple Music, sir.' },
+    'music app': { url: 'music://', msg: 'Opening Music, sir.' },
+    'photos': { url: 'photos-redirect://', msg: 'Opening Photos, sir.' },
+    'app store': { url: 'macappstore://', msg: 'Opening the App Store, sir.' },
+    'calendar': { url: 'calshow://', msg: 'Opening Calendar, sir.' },
+    'notes': { url: 'applenotes://', msg: 'Opening Notes, sir.' },
+    'reminders': { url: 'x-apple-reminderkit://', msg: 'Opening Reminders, sir.' },
+    'settings': { url: 'x-apple.systempreferences://', msg: 'Opening System Settings, sir.' },
+    'system preferences': { url: 'x-apple.systempreferences://', msg: 'Opening System Settings, sir.' },
+    'system settings': { url: 'x-apple.systempreferences://', msg: 'Opening System Settings, sir.' },
+    'finder': { url: null, msg: 'I can\'t open Finder from the browser, sir. You can click the Finder icon in your dock.' },
+    'terminal': { url: null, msg: 'I can\'t open Terminal from the browser, sir. You can find it in Applications, Utilities.' },
+    'spotify app': { url: 'spotify://', msg: 'Opening Spotify app, sir.' },
+  };
+
+  // Scroll commands
+  if (/scroll (up|down|to the top|to the bottom)/.test(lower)) {
+    if (/to the top|all the way up/.test(lower)) { window.scrollTo({top:0,behavior:'smooth'}); return `Scrolled to the top, sir.`; }
+    if (/to the bottom|all the way down/.test(lower)) { window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}); return `Scrolled to the bottom, sir.`; }
+    if (/up/.test(lower)) { window.scrollBy({top:-400,behavior:'smooth'}); return `Scrolling up, sir.`; }
+    if (/down/.test(lower)) { window.scrollBy({top:400,behavior:'smooth'}); return `Scrolling down, sir.`; }
+  }
+
+  // Fullscreen
+  if (/full\s?screen|maximize/.test(lower)) {
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+    return `Going fullscreen, sir.`;
+  }
+  if (/exit full\s?screen|minimize/.test(lower)) {
+    if (document.exitFullscreen) document.exitFullscreen();
+    return `Exiting fullscreen, sir.`;
+  }
+
+  // Play music on YouTube
+  if (/play (.+?) (on |in )?(youtube|spotify)/i.test(lower)) {
+    const m = lower.match(/play (.+?) (on |in )?(youtube|spotify)/i);
+    const song = m[1];
+    const platform = m[3];
+    if (platform === 'youtube') {
+      openURL(`https://www.youtube.com/results?search_query=${encodeURIComponent(song)}`);
+      return `Searching for "${song}" on YouTube, sir.`;
+    } else {
+      openURL(`https://open.spotify.com/search/${encodeURIComponent(song)}`);
+      return `Searching for "${song}" on Spotify, sir.`;
+    }
+  }
+
+  // General "play [song/video]" - default to YouTube
+  if (/^play\s+(.+)/i.test(lower)) {
+    const song = lower.match(/^play\s+(.+)/i)[1].replace(/\s*(please|for me)\s*/gi,'').trim();
+    openURL(`https://www.youtube.com/results?search_query=${encodeURIComponent(song)}`);
+    return `Searching for "${song}" on YouTube, sir.`;
+  }
+
+  // Search on specific platforms
+  if (/search (.+) on (youtube|reddit|amazon|ebay|twitter|github)/i.test(lower)) {
+    const m = lower.match(/search (.+) on (youtube|reddit|amazon|ebay|twitter|github)/i);
+    const query = m[1], platform = m[2];
+    const searchUrls = {
+      youtube: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+      reddit: `https://www.reddit.com/search/?q=${encodeURIComponent(query)}`,
+      amazon: `https://www.amazon.com/s?k=${encodeURIComponent(query)}`,
+      ebay: `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`,
+      twitter: `https://twitter.com/search?q=${encodeURIComponent(query)}`,
+      github: `https://github.com/search?q=${encodeURIComponent(query)}`,
+    };
+    openURL(searchUrls[platform]);
+    return `Searching for "${query}" on ${platform.charAt(0).toUpperCase()+platform.slice(1)}, sir.`;
+  }
+
+  // Set timer/alarm
+  if (/set (a )?(timer|alarm|reminder) (for )?(\d+)\s*(second|minute|hour|min|sec|hr)/i.test(lower)) {
+    const m = lower.match(/(\d+)\s*(second|minute|hour|min|sec|hr)/i);
+    let ms = parseInt(m[1]) * 1000;
+    if (/min/i.test(m[2])) ms *= 60;
+    else if (/hour|hr/i.test(m[2])) ms *= 3600;
+    setTimeout(() => { speak(`Time's up, sir. Your ${m[1]} ${m[2]} timer has finished.`); }, ms);
+    return `Timer set for ${m[1]} ${m[2]}${parseInt(m[1])>1?'s':''}, sir.`;
+  }
+
+  // Copy to clipboard
+  if (/copy (that|this|the text|the response|what you said)/.test(lower)) {
+    const text = responseEl.textContent;
+    if (text) { navigator.clipboard.writeText(text).catch(()=>{}); return `Copied to your clipboard, sir.`; }
+    return `There's nothing to copy right now, sir.`;
+  }
+
+  // Brightness (CSS filter hack)
+  if (/(?:dim|darken|lower|reduce) (?:the )?(screen|brightness|display)/.test(lower)) {
+    document.body.style.filter = 'brightness(0.5)';
+    return `Dimming the display, sir.`;
+  }
+  if (/(?:brighten|increase|raise|restore) (?:the )?(screen|brightness|display)/.test(lower)) {
+    document.body.style.filter = 'brightness(1)';
+    return `Restoring display brightness, sir.`;
+  }
+
+  // Dark/light mode doesn't apply (already dark), but acknowledge
+  if (/dark mode|light mode|night mode/.test(lower)) {
+    return `We're already in a dark interface, sir.`;
+  }
+
+  return null;
+}
+
+function initApiIndicators(){Object.values(APIs).forEach(a=>{const t=document.createElement('div');t.className='api-tag';t.id=`api-${a.name}`;t.textContent=a.name;apiIndicators.appendChild(t);});}initApiIndicators();
+function flashApi(n){const e=$(`api-${n}`);if(e){e.classList.add('active');setTimeout(()=>e.classList.remove('active'),3000);}}
+
+async function getWeather(q){flashApi('weather');const loc=q.replace(/weather|forecast|temperature|what'?s? it like|outside|in |at |for |how (hot|cold|warm) is it/gi,'').trim()||'';try{const r=await fetch(`https://wttr.in/${encodeURIComponent(loc)}?format=j1`);const d=await r.json();const c=d.current_condition[0],l=d.nearest_area[0];return`Currently in ${l.areaName[0].value}, ${l.country[0].value}: ${c.weatherDesc[0].value}, ${c.temp_F}F/${c.temp_C}C. Humidity ${c.humidity}%, wind ${c.windspeedMiles}mph, sir.`;}catch(e){return null;}}
+async function getWikipedia(q){flashApi('wikipedia');const s=q.replace(/who is|what is|what are|tell me about|wiki|wikipedia|look up|search for|define /gi,'').trim();try{const r=await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(s)}`);if(!r.ok)return null;const d=await r.json();if(d.extract)return d.extract.split('. ').slice(0,3).join('. ')+'.';return null;}catch(e){return null;}}
+async function getDictionary(w){flashApi('dictionary');try{const r=await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);if(!r.ok)return null;const d=await r.json();return`"${d[0].word}" is a ${d[0].meanings[0].partOfSpeech}. ${d[0].meanings[0].definitions[0].definition}`;}catch(e){return null;}}
+async function getJoke(){flashApi('jokes');try{const r=await fetch('https://v2.jokeapi.dev/joke/Miscellaneous,Pun,Programming?blacklistFlags=nsfw,religious,political,racist,sexist,explicit&type=twopart,single');const d=await r.json();return d.type==='single'?d.joke:`${d.setup} ... ${d.delivery}`;}catch(e){return null;}}
+async function getRandomFact(){flashApi('facts');try{const r=await fetch('https://uselessfacts.jsph.pl/api/v2/facts/random?language=en');return(await r.json()).text;}catch(e){return null;}}
+async function getCurrency(q){flashApi('currency');const m=q.match(/(\d+(?:\.\d+)?)\s*(\w{3})\s*(?:to|in|into)\s*(\w{3})/i);if(!m)return null;try{const r=await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${m[2].toLowerCase()}.json`);const d=await r.json();const rate=d[m[2].toLowerCase()]?.[m[3].toLowerCase()];if(!rate)return null;return`${m[1]} ${m[2].toUpperCase()} is approximately ${(parseFloat(m[1])*rate).toFixed(2)} ${m[3].toUpperCase()}, sir.`;}catch(e){return null;}}
+async function getLocation(){flashApi('location');try{const r=await fetch('https://ipapi.co/json/');const d=await r.json();return`You're in ${d.city}, ${d.region}, ${d.country_name}. Timezone: ${d.timezone}, sir.`;}catch(e){return null;}}
+async function getTrivia(){flashApi('trivia');try{const r=await fetch('https://opentdb.com/api.php?amount=1&type=multiple');const d=await r.json();const q=d.results[0];return`Trivia: ${q.question.replace(/&quot;/g,'"').replace(/&#039;/g,"'").replace(/&amp;/g,'&')} Answer: ${q.correct_answer.replace(/&quot;/g,'"').replace(/&#039;/g,"'").replace(/&amp;/g,'&')}.`;}catch(e){return null;}}
+async function getQuote(){flashApi('quotes');try{const r=await fetch('https://zenquotes.io/api/random');const d=await r.json();return`${d[0].q} — ${d[0].a}`;}catch(e){return null;}}
+async function getCatFact(){flashApi('catfacts');try{return(await(await fetch('https://catfact.ninja/fact')).json()).fact;}catch(e){return null;}}
+async function getDogFact(){flashApi('dogfacts');try{return(await(await fetch('https://dogapi.dog/api/v2/facts?limit=1')).json()).data[0].attributes.body;}catch(e){return null;}}
+async function getAdvice(){flashApi('advice');try{return(await(await fetch('https://api.adviceslip.com/advice')).json()).slip.advice;}catch(e){return null;}}
+async function getActivity(){flashApi('bored');try{const d=await(await fetch('https://bored-api.appbrewery.com/random')).json();return`How about: ${d.activity}.`;}catch(e){return null;}}
+async function getCountryInfo(q){flashApi('countries');const c=q.replace(/country|info|about|tell me about|population of|capital of|where is/gi,'').trim();try{const r=await fetch(`https://restcountries.com/v3.1/name/${encodeURIComponent(c)}?fields=name,capital,population,region,languages,currencies`);if(!r.ok)return null;const d=await r.json();const x=d[0];return`${x.name.common}: ${x.region}. Capital: ${x.capital?.[0]||'?'}. Pop: ${(x.population/1e6).toFixed(1)}M.`;}catch(e){return null;}}
+async function getSpaceX(){flashApi('spacex');try{const d=await(await fetch('https://api.spacexdata.com/v4/launches/latest')).json();return`Latest SpaceX: "${d.name}" on ${new Date(d.date_utc).toLocaleDateString()}. ${d.success?'Successful.':'Not successful.'}`;}catch(e){return null;}}
+async function getPokemon(q){flashApi('pokemon');const n=q.replace(/pok[eé]mon|pokedex|what is|tell me about/gi,'').trim().toLowerCase();if(!n)return null;try{const r=await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(n)}`);if(!r.ok)return null;const d=await r.json();return`${d.name.charAt(0).toUpperCase()+d.name.slice(1)}: ${d.types.map(t=>t.type.name).join('/')} type. HP:${d.stats[0].base_stat}, ATK:${d.stats[1].base_stat}.`;}catch(e){return null;}}
+async function getGitHub(q){flashApi('github');const u=q.replace(/github|profile|user|repos of/gi,'').trim().split(/\s/)[0];if(!u)return null;try{const r=await fetch(`https://api.github.com/users/${encodeURIComponent(u)}`);if(!r.ok)return null;const d=await r.json();return`GitHub: ${d.login} (${d.name||'-'}). ${d.public_repos} repos, ${d.followers} followers.`;}catch(e){return null;}}
+async function getCrypto(q){flashApi('crypto');let coin='bitcoin';if(/ethereum|eth\b/i.test(q))coin='ethereum';else if(/solana|sol\b/i.test(q))coin='solana';else if(/dogecoin|doge/i.test(q))coin='dogecoin';else if(/cardano|ada\b/i.test(q))coin='cardano';else if(/ripple|xrp/i.test(q))coin='ripple';try{const r=await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coin}&vs_currencies=usd&include_24hr_change=true`);const d=await r.json();const p=d[coin].usd,ch=d[coin].usd_24h_change?.toFixed(2);return`${coin.charAt(0).toUpperCase()+coin.slice(1)}: $${p.toLocaleString()}. ${ch>=0?'Up':'Down'} ${Math.abs(ch)}% in 24h, sir.`;}catch(e){return null;}}
+async function getStockPrice(q){flashApi('stocks');let tk=q.replace(/stock|price|share|market|what is|how is|of|the/gi,'').trim().toUpperCase().split(/\s/)[0];const nm={APPLE:'AAPL',GOOGLE:'GOOGL',AMAZON:'AMZN',MICROSOFT:'MSFT',TESLA:'TSLA',META:'META',NETFLIX:'NFLX',NVIDIA:'NVDA',AMD:'AMD',DISNEY:'DIS',NIKE:'NKE',WALMART:'WMT',INTEL:'INTC',SPOTIFY:'SPOT',UBER:'UBER'};if(nm[tk])tk=nm[tk];if(!tk||tk.length>6)return null;try{const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${tk}?interval=1d&range=1d`);const d=await r.json();const m=d.chart?.result?.[0]?.meta;if(!m)return null;const p=m.regularMarketPrice?.toFixed(2),prev=m.chartPreviousClose,ch=((m.regularMarketPrice-prev)/prev*100).toFixed(2);return`${m.symbol}: $${p}. ${ch>=0?'Up':'Down'} ${Math.abs(ch)}% today, sir.`;}catch(e){return null;}}
+async function getSportsScores(q){flashApi('sports');let sport='soccer';if(/nba|basketball/.test(q))sport='basketball';else if(/nfl|football|american/.test(q))sport='americanfootball';else if(/mlb|baseball/.test(q))sport='baseball';else if(/nhl|hockey/.test(q))sport='icehockey';try{const r=await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${new Date().toISOString().split('T')[0]}&s=${sport}`);const d=await r.json();if(d.events?.length){const g=d.events.slice(0,4).map(e=>(e.intHomeScore!=null?`${e.strHomeTeam} ${e.intHomeScore}-${e.intAwayScore} ${e.strAwayTeam}`:`${e.strHomeTeam} vs ${e.strAwayTeam}`));return`Today's ${sport}: ${g.join('. ')}.`;}return`No ${sport} games found today, sir.`;}catch(e){return null;}}
+
+// =============================================
+// === MEMORY ===
+// =============================================
+const Memory={
+  data:{name:null,preferences:{},facts:{},queryCount:0,favoriteTopics:{},
+    // Self-learning data
+    corrections:{},          // When user says "no, I meant X" - learns from mistakes
+    customCommands:{},       // Learned custom commands from user behavior
+    frequentQueries:[],      // Track most asked queries to respond faster
+    responseRatings:{},      // Track what responses worked well
+    userSchedule:{},         // Learn user's daily patterns (morning/evening habits)
+    knowledgeBase:{},        // Store answers to questions for instant recall
+    conversationStyle:{formality:'casual',verbosity:'concise',humor:false},
+    lastSessionTime:null,
+    sessionCount:0,
+  },
+  load(){try{const s=localStorage.getItem('jarvis_memory');if(s)this.data={...this.data,...JSON.parse(s)};}catch(e){}this.data.sessionCount++;this.data.lastSessionTime=Date.now();this.save();},
+  save(){try{localStorage.setItem('jarvis_memory',JSON.stringify(this.data));}catch(e){}},
+  flash(){},
+
+  // Core learning from every interaction
+  learnFromQuery(q){
+    this.data.queryCount++;
+    const l=q.toLowerCase();
+
+    // Learn name
+    const nm=l.match(/my name is (\w+)|i'?m (\w+)|call me (\w+)/);
+    if(nm){this.data.name=(nm[1]||nm[2]||nm[3]);this.data.name=this.data.name.charAt(0).toUpperCase()+this.data.name.slice(1);}
+
+    // Track topics
+    const tops=['weather','sports','news','crypto','stocks','music','movies','science','tech','gaming','space','youtube','coding','programming','fitness','food','travel','cars','anime','art'];
+    for(const t of tops)if(l.includes(t)){this.data.favoriteTopics[t]=(this.data.favoriteTopics[t]||0)+1;}
+
+    // Learn preferences
+    if(/i (like|love|prefer|enjoy|hate|dislike|don't like) /i.test(l)){
+      const p=l.match(/i (?:like|love|prefer|enjoy|hate|dislike|don't like) (.+?)(?:\.|,|$)/i);
+      if(p){
+        const thing=p[1].trim();
+        if(/hate|dislike|don't like/.test(l)) this.data.preferences[thing]='dislike';
+        else this.data.preferences[thing]='like';
+      }
+    }
+
+    // Learn personal facts
+    if(/i (am|work|live|study|go to|attend|play|drive|own|have) /i.test(l)){
+      const f=l.match(/i (?:am|work|live|study|go to|attend|play|drive|own|have) (.+?)(?:\.|,|$)/i);
+      if(f) this.data.facts[f[1].trim()]=true;
+    }
+
+    // Learn corrections: "no I meant X", "actually X", "I said X not Y"
+    if(/no,? (i meant|i said|i want|it's|it is|actually)/i.test(l)){
+      const corr=l.match(/no,? (?:i meant|i said|i want|it's|it is|actually) (.+?)(?:\.|$)/i);
+      if(corr) this.data.corrections[Date.now()]=corr[1].trim();
+    }
+
+    // Learn custom commands: "when I say X, do Y"
+    if(/when i say (.+?),? (open|play|search|do|show|go to) (.+)/i.test(l)){
+      const cm=l.match(/when i say (.+?),? (open|play|search|do|show|go to) (.+)/i);
+      if(cm) this.data.customCommands[cm[1].trim()]={action:cm[2],target:cm[3].trim()};
+    }
+
+    // Track frequent queries for pattern learning
+    const simplified=l.replace(/[^a-z ]/g,'').trim();
+    this.data.frequentQueries.push({q:simplified,t:Date.now()});
+    if(this.data.frequentQueries.length>200) this.data.frequentQueries=this.data.frequentQueries.slice(-200);
+
+    // Learn time-of-day patterns
+    const hour=new Date().getHours();
+    const period=hour<6?'night':hour<12?'morning':hour<17?'afternoon':'evening';
+    if(!this.data.userSchedule[period]) this.data.userSchedule[period]=[];
+    this.data.userSchedule[period].push(simplified.split(' ').slice(0,3).join(' '));
+    if(this.data.userSchedule[period].length>50) this.data.userSchedule[period]=this.data.userSchedule[period].slice(-50);
+
+    // Detect conversation style preferences
+    if(l.length<20) this.data.conversationStyle.verbosity='very concise';
+    if(/lol|haha|lmao|😂/.test(l)) this.data.conversationStyle.humor=true;
+
+    this.save();
+  },
+
+  // Store successful responses for instant recall
+  learnResponse(query, response){
+    const key=query.toLowerCase().replace(/[^a-z ]/g,'').trim();
+    if(key.length>5 && response && response.length>10){
+      this.data.knowledgeBase[key]={response:response,uses:1,lastUsed:Date.now()};
+      // Keep knowledge base manageable
+      const keys=Object.keys(this.data.knowledgeBase);
+      if(keys.length>100){
+        // Remove least used entries
+        const sorted=keys.sort((a,b)=>this.data.knowledgeBase[a].uses-this.data.knowledgeBase[b].uses);
+        for(let i=0;i<20;i++) delete this.data.knowledgeBase[sorted[i]];
+      }
+      this.save();
+    }
+  },
+
+  // Check if we already know the answer
+  recallResponse(query){
+    const key=query.toLowerCase().replace(/[^a-z ]/g,'').trim();
+    const entry=this.data.knowledgeBase[key];
+    if(entry && (Date.now()-entry.lastUsed)<86400000*7){ // Within 7 days
+      entry.uses++;entry.lastUsed=Date.now();this.save();
+      return entry.response;
+    }
+    return null;
+  },
+
+  // Check custom commands
+  checkCustomCommand(q){
+    const l=q.toLowerCase();
+    for(const [trigger,cmd] of Object.entries(this.data.customCommands)){
+      if(l.includes(trigger)) return cmd;
+    }
+    return null;
+  },
+
+  // Get top interests for smarter context
+  getTopInterests(){
+    const sorted=Object.entries(this.data.favoriteTopics).sort((a,b)=>b[1]-a[1]);
+    return sorted.slice(0,5).map(x=>x[0]);
+  },
+
+  getGreeting(){return this.data.name||'sir';},
+
+  getContext(){
+    let c='';
+    if(this.data.name) c+=`User's name: ${this.data.name}. `;
+    const interests=this.getTopInterests();
+    if(interests.length) c+=`Top interests: ${interests.join(', ')}. `;
+    if(Object.keys(this.data.preferences).length){
+      const likes=Object.entries(this.data.preferences).filter(x=>x[1]==='like').map(x=>x[0]).slice(0,5);
+      const dislikes=Object.entries(this.data.preferences).filter(x=>x[1]==='dislike').map(x=>x[0]).slice(0,3);
+      if(likes.length) c+=`Likes: ${likes.join(', ')}. `;
+      if(dislikes.length) c+=`Dislikes: ${dislikes.join(', ')}. `;
+    }
+    if(Object.keys(this.data.facts).length) c+=`Known facts: ${Object.keys(this.data.facts).slice(0,5).join(', ')}. `;
+    c+=`Sessions: ${this.data.sessionCount}. Queries: ${this.data.queryCount}. `;
+    if(this.data.conversationStyle.humor) c+=`User enjoys humor. `;
+    return c;
+  },
+
+  handleMemoryQuery(q){
+    if(/what('?s| is) my name|remember my name/.test(q))return this.data.name?`Your name is ${this.data.name}, sir. I remember everything.`:"You haven't told me your name yet, sir.";
+    if(/what do you (know|remember)|what have you learned/.test(q)){
+      const p=[];
+      if(this.data.name)p.push(`Your name is ${this.data.name}`);
+      const interests=this.getTopInterests();
+      if(interests.length)p.push(`you're most interested in ${interests.slice(0,3).join(', ')}`);
+      const likes=Object.entries(this.data.preferences).filter(x=>x[1]==='like').map(x=>x[0]);
+      if(likes.length)p.push(`you like ${likes.slice(0,3).join(', ')}`);
+      if(Object.keys(this.data.facts).length)p.push(`I know ${Object.keys(this.data.facts).slice(0,3).join(', ')}`);
+      p.push(`we've had ${this.data.queryCount} interactions across ${this.data.sessionCount} sessions`);
+      if(Object.keys(this.data.knowledgeBase).length)p.push(`I've learned ${Object.keys(this.data.knowledgeBase).length} things from our conversations`);
+      return`Here's what I know, sir. ${p.join('. ')}.`;
+    }
+    if(/forget|clear memory|reset memory/.test(q)){this.data={name:null,preferences:{},facts:{},queryCount:0,favoriteTopics:{},corrections:{},customCommands:{},frequentQueries:[],responseRatings:{},userSchedule:{},knowledgeBase:{},conversationStyle:{formality:'casual',verbosity:'concise',humor:false},lastSessionTime:null,sessionCount:0};this.save();return"Memory wiped clean, sir. We start fresh.";}
+    return null;
+  }
+};
+Memory.load();
+
+// =============================================
+// === BRAIN ===
+// =============================================
+function getTimeGreeting(){const h=new Date().getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";}
+function getTime(){return new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});}
+function getDate(){return new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});}
+function pick(a){return a[Math.floor(Math.random()*a.length)];}
+let conversationHistory=[];
+
+function getSysPrompt(){return`You are J.A.R.V.I.S., a calm and helpful AI assistant. Speak naturally in a soft American male tone. ALWAYS address the user as "sir" at the end of each sentence. Keep responses concise (2-3 sentences max). No markdown, no emojis, plain speech only. NEVER say "I'm afraid", "I fear", "alas", or any overly formal/butler-like phrases. Just be direct, warm, and helpful. End every sentence with "sir". You have access to live data, web search, and computer control. Current date: ${new Date().toLocaleDateString()}, time: ${new Date().toLocaleTimeString()}. ${Memory.getContext()}`;}
+
+// isShutdown declared at top of script
+
+async function getResponse(input){
+  const q=input.toLowerCase().trim(),name=Memory.getGreeting();
+  if(!q||q.length<2)return null;
+
+  // Shutdown mode — only respond to "jarvis"
+  if(isShutdown) return null;
+
+  // Shutdown command
+  if(/shut\s*down|go to sleep|sleep mode|power down|goodnight jarvis|good night jarvis/i.test(q)){
+    isShutdown = true;
+    speechSynthesis.cancel();
+    isSpeaking=false;isThinking=false;processingQuery=false;
+    targetEnergy = 0.3;
+    setUIState('sleep');
+    return `Going to sleep, sir. Say Jarvis when you need me.`;
+  }
+
+  Memory.learnFromQuery(input);
+
+  // Check custom commands (self-learned)
+  const custom = Memory.checkCustomCommand(q);
+  if(custom){
+    if(custom.action==='open') return computerControl(`open ${custom.target}`);
+    if(custom.action==='play') return computerControl(`play ${custom.target}`);
+    if(custom.action==='search') return computerControl(`search ${custom.target}`);
+  }
+
+  const mem=Memory.handleMemoryQuery(q);if(mem)return mem;
+  // Computer control — check FIRST before other APIs
+  const ctrl = computerControl(q);
+  if (ctrl) return ctrl;
+
+  if(/^(hi|hello|hey|what'?s up|sup|yo)\b/.test(q))return pick([`${getTimeGreeting()}, sir.`,`Hello, sir. At your disposal.`]);
+  if(/what time|current time|tell me the time/.test(q))return`It's ${getTime()}, sir.`;
+  if(/what('?s| is) (the |today'?s? )?date|what day/.test(q))return`Today is ${getDate()}, sir.`;
+  if(/^(thank|thanks)/.test(q))return pick([`You're welcome, sir.`,`My pleasure, sir.`]);
+  if(/\b(bye|goodbye|good night)\b/.test(q))return`Goodbye, sir. I'll be here.`;
+
+  // === NEW ABILITIES ===
+
+  // Math solver
+  if(/^(calculate|what('?s| is)|solve|math|compute)?\s*[\d\s\+\-\*\/\(\)\.\^%]+$/.test(q.replace(/x/g,'*'))){
+    try{const expr=q.replace(/x/g,'*').replace(/\^/g,'**').replace(/[^0-9\+\-\*\/\(\)\.\s%]/g,'');
+    const result=Function('"use strict";return ('+expr+')')();
+    if(!isNaN(result))return`The answer is ${result}, sir.`;}catch(e){}
+  }
+  if(/calculate |what('?s| is) (\d)|solve |how much is |compute /.test(q)){
+    try{const expr=q.replace(/calculate|what's|what is|solve|how much is|compute|equals|equal/gi,'').replace(/x/g,'*').replace(/\^/g,'**').replace(/plus/gi,'+').replace(/minus/gi,'-').replace(/times|multiplied by/gi,'*').replace(/divided by|over/gi,'/').trim();
+    const result=Function('"use strict";return ('+expr+')')();
+    if(!isNaN(result))return`That equals ${result}, sir.`;}catch(e){}
+  }
+
+  // Coin flip
+  if(/flip (a )?coin|coin flip|heads or tails/.test(q)){
+    return Math.random()>0.5?`It's heads, sir.`:`It's tails, sir.`;
+  }
+
+  // Dice roll
+  if(/roll (a )?dice|roll (a )?die|roll (a )?d(\d+)?/.test(q)){
+    const dm=q.match(/d(\d+)/);const sides=dm?parseInt(dm[1]):6;
+    const result=Math.floor(Math.random()*sides)+1;
+    return`I rolled a ${result} out of ${sides}, sir.`;
+  }
+
+  // Random number
+  if(/random number|pick a number|generate (a )?number/.test(q)){
+    const rm=q.match(/between (\d+) and (\d+)/);
+    if(rm){const n=Math.floor(Math.random()*(parseInt(rm[2])-parseInt(rm[1])+1))+parseInt(rm[1]);return`${n}, sir.`;}
+    return`${Math.floor(Math.random()*100)+1}, sir.`;
+  }
+
+  // Password generator
+  if(/generate (a )?password|random password|new password|strong password/.test(q)){
+    const chars='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';
+    let pw='';for(let i=0;i<16;i++)pw+=chars[Math.floor(Math.random()*chars.length)];
+    navigator.clipboard.writeText(pw).catch(()=>{});
+    return`Here's a strong password, sir: ${pw}. Already copied to your clipboard.`;
+  }
+
+  // Color of sphere
+  if(/change (the )?(color|colour) to (\w+)|make (it|the sphere|yourself) (\w+)/.test(q)){
+    const cm=q.match(/(?:to|make (?:it|the sphere|yourself)) (\w+)/i);
+    if(cm){
+      const colors={red:0xff3030,green:0x30ff60,blue:0x00dcff,purple:0xaa44ff,pink:0xff44aa,orange:0xff8830,yellow:0xffdd30,white:0xffffff,cyan:0x00ffff,gold:0xffd700};
+      const c=colors[cm[1].toLowerCase()];
+      if(c){pMat.uniforms.color.value=new THREE.Color(c);return`Changed my color to ${cm[1]}, sir.`;}
+    }
+  }
+
+  // Countdown timer with live feedback
+  if(/countdown from (\d+)|count down from (\d+)/.test(q)){
+    const n=parseInt(q.match(/from (\d+)/)[1]);
+    if(n>0&&n<=60){
+      let count=n;
+      const iv=setInterval(()=>{
+        if(count<=0){clearInterval(iv);speak(`Time, sir.`);return;}
+        responseEl.textContent=count.toString();responseEl.classList.add('visible');
+        count--;
+      },1000);
+      return`Counting down from ${n}, sir.`;
+    }
+  }
+
+  // Unit conversion
+  if(/(\d+\.?\d*)\s*(miles?|km|kilometers?|pounds?|kg|kilograms?|feet|ft|meters?|m\b|inches?|in\b|cm|celsius|fahrenheit|c\b|f\b|oz|ounces?|grams?|g\b|liters?|l\b|gallons?|gal)\s*(to|in|into)\s*(miles?|km|kilometers?|pounds?|kg|kilograms?|feet|ft|meters?|m\b|inches?|in\b|cm|celsius|fahrenheit|c\b|f\b|oz|ounces?|grams?|g\b|liters?|l\b|gallons?|gal)/i.test(q)){
+    const um=q.match(/(\d+\.?\d*)\s*(\w+)\s*(?:to|in|into)\s*(\w+)/i);
+    if(um){
+      const val=parseFloat(um[1]),from=um[2].toLowerCase(),to=um[3].toLowerCase();
+      const conv={
+        'miles-km':1.60934,'km-miles':0.621371,
+        'pounds-kg':0.453592,'kg-pounds':2.20462,
+        'feet-meters':0.3048,'meters-feet':3.28084,'feet-m':0.3048,'m-feet':3.28084,'ft-m':0.3048,'m-ft':3.28084,
+        'inches-cm':2.54,'cm-inches':0.393701,'in-cm':2.54,'cm-in':0.393701,
+        'oz-grams':28.3495,'grams-oz':0.035274,'ounces-grams':28.3495,'grams-ounces':0.035274,
+        'liters-gallons':0.264172,'gallons-liters':3.78541,'l-gal':0.264172,'gal-l':3.78541,
+        'g-oz':0.035274,'oz-g':28.3495,
+      };
+      const key=`${from}-${to}`;
+      if(conv[key]){return`${val} ${from} is ${(val*conv[key]).toFixed(2)} ${to}, sir.`;}
+      // Temperature
+      if((from==='celsius'||from==='c')&&(to==='fahrenheit'||to==='f'))return`${val} Celsius is ${(val*9/5+32).toFixed(1)} Fahrenheit, sir.`;
+      if((from==='fahrenheit'||from==='f')&&(to==='celsius'||to==='c'))return`${val} Fahrenheit is ${((val-32)*5/9).toFixed(1)} Celsius, sir.`;
+    }
+  }
+
+  // Translate (using Claude AI)
+  if(/translate (.+?) (to|into) (\w+)/i.test(q)){
+    const tm=q.match(/translate (.+?) (?:to|into) (\w+)/i);
+    if(tm){
+      try{const r=await puter.ai.chat([{role:'user',content:`Translate "${tm[1]}" to ${tm[2]}. Reply with ONLY the translation, nothing else.`}],{model:'claude-sonnet-4-6',stream:false});
+      const reply=typeof r==='string'?r:r?.message?.content?.[0]?.text||r?.message?.content||String(r);
+      return`That's "${reply}" in ${tm[2]}, sir.`;}catch(e){}
+    }
+  }
+
+  // Spell a word
+  if(/spell (\w+)|how do you spell (\w+)/.test(q)){
+    const word=(q.match(/spell (\w+)/i)||q.match(/how do you spell (\w+)/i))[1];
+    return`${word.toUpperCase().split('').join(' - ')}, sir.`;
+  }
+
+  // Toggle typing mode
+  if(/type mode|typing mode|keyboard mode|text mode/.test(q)){
+    const bar=$('type-bar');
+    bar.classList.toggle('visible');
+    return bar.classList.contains('visible')?`Typing mode enabled, sir. You can type commands below.`:`Typing mode disabled, sir.`;
+  }
+
+  // Compliment
+  if(/compliment me|say something nice|make me feel good/.test(q)){
+    return pick([
+      `You're doing great, sir. Truly impressive.`,
+      `If I may say, sir, your potential is remarkable.`,
+      `You're one of the sharpest minds I've had the pleasure of assisting, sir.`,
+      `The world could use more people like you, sir.`
+    ]);
+  }
+
+  // Motivation
+  if(/motivate me|i need motivation|inspire me/.test(q)){
+    return pick([
+      `Every great achievement started with the decision to try, sir. You've got this.`,
+      `Sir, discipline beats motivation every time. But you already knew that.`,
+      `The only limit is the one you set for yourself, sir. Remove it.`,
+      `Small progress is still progress, sir. Keep moving forward.`
+    ]);
+  }
+
+  // Rock paper scissors
+  if(/rock paper scissors|play rps|rock, paper/.test(q)){
+    const choices=['rock','paper','scissors'];
+    return`I choose ${pick(choices)}, sir. What's your move?`;
+  }
+
+  // What can you do
+  if(/what can you do|what are your (abilities|features|capabilities)|help me|your commands/.test(q)){
+    return`I can open websites and apps, play music, search the web, give you weather, news, stocks, crypto, sports scores, translate languages, do math, convert units, flip coins, roll dice, generate passwords, set timers, tell jokes, give facts, and much more, sir. Just ask.`;
+  }
+
+  // How are you / status check
+  if(/how are you|how('?re| are) you (doing|feeling)|you okay|your status/.test(q)){
+    return pick([`All systems running smoothly, sir.`,`Operating at full capacity, sir.`,`I'm doing well, sir. Ready for whatever you need.`]);
+  }
+  // Market briefing
+  if (/market (brief|summary|overview|update|report)|how('?s| is|are) the market/.test(q)) {
+    const parts = [];
+    for (const [n,d] of Object.entries(MarketHUD.indices)) parts.push(`${n}: $${Number(d.price).toLocaleString()} (${d.change>=0?'+':''}${d.change}%)`);
+    for (const [n,d] of Object.entries(MarketHUD.crypto)) {
+      const names={bitcoin:'Bitcoin',ethereum:'Ethereum',solana:'Solana'};
+      if(['bitcoin','ethereum','solana'].includes(n)) parts.push(`${names[n]}: $${Number(d.price).toLocaleString()}`);
+    }
+    return parts.length ? `Market update, sir. ${parts.join('. ')}.` : `Market data is still loading, sir. Give me a moment.`;
+  }
+  try{
+    if(/news|headline|current events|what'?s happening|breaking/.test(q)){const r=await getNews(q);if(r)return r;}
+    if(/score|sports|nba|nfl|mlb|nhl|soccer|football|basketball|baseball|hockey|match|game today/.test(q)){const r=await getSportsScores(q);if(r)return r;}
+    if(/stock|share price|ticker|nasdaq|nyse|aapl|googl|msft|tsla|amzn|nvda/.test(q)){const r=await getStockPrice(q);if(r)return r;}
+    if(/weather|forecast|temperature|how (hot|cold|warm)|outside/.test(q)){const r=await getWeather(q);if(r)return r;}
+    if(/define |definition of |what does .+ mean/.test(q)){const w=q.replace(/define |definition of |what does | mean\??/gi,'').trim().split(/\s/)[0];if(w){const r=await getDictionary(w);if(r)return`${r}, sir.`;}}
+    if(/\d+\s*\w{3}\s*(to|in|into)\s*\w{3}/.test(q)){const r=await getCurrency(q);if(r)return r;}
+    if(/bitcoin|btc|ethereum|eth\b|crypto|solana|dogecoin|cardano|ripple|xrp/.test(q)){const r=await getCrypto(q);if(r)return r;}
+    if(/joke|make me laugh|funny/.test(q)){const r=await getJoke();if(r)return`${r} Hope that amused you, sir.`;}
+    if(/cat fact/.test(q)){const r=await getCatFact();if(r)return`Feline fact: ${r}`;}
+    if(/dog fact/.test(q)){const r=await getDogFact();if(r)return`Canine fact: ${r}`;}
+    if(/random fact|fun fact|tell me.+fact|did you know/.test(q)){const r=await getRandomFact();if(r)return`Interesting fact: ${r}`;}
+    if(/trivia|quiz|test me/.test(q)){const r=await getTrivia();if(r)return r;}
+    if(/quote|inspiration|motivat/.test(q)){const r=await getQuote();if(r)return`A quote, sir: ${r}`;}
+    if(/advice|life tip|wisdom/.test(q)){const r=await getAdvice();if(r)return`Advice: ${r}`;}
+    if(/bored|nothing to do|activity|something to do/.test(q)){const r=await getActivity();if(r)return r;}
+    if(/population|capital of|country info/.test(q)){const r=await getCountryInfo(q);if(r)return r;}
+    if(/spacex|rocket launch|falcon|starship/.test(q)){const r=await getSpaceX();if(r)return r;}
+    if(/pok[eé]mon|pokedex|pikachu|charizard/.test(q)){const r=await getPokemon(q);if(r)return r;}
+    if(/github/.test(q)){const r=await getGitHub(q);if(r)return r;}
+    if(/where am i|my location|my ip/.test(q)){const r=await getLocation();if(r)return r;}
+    if(/who (is|was|are)|what (is|are|was|were) (a |an |the )?(?!time|date|day|your|my)/.test(q)||/tell me about /.test(q)){const r=await getWikipedia(q);if(r)return`${r} Shall I elaborate, sir?`;}
+    // Google / web search
+    if(/open google|show me on google|google images|images of|pictures of/.test(q))return openGoogleSearch(q);
+    if(/google|search|search for|search the web|look up|find out|look it up/.test(q)){const r=await googleSearch(q);if(r)return r;}
+  }catch(e){}
+  // If nothing matched, try a web search before Claude
+  try{const r=await googleSearch(input);if(r)return r;}catch(e){}
+  try{return await callClaudeAPI(input);}catch(e){}
+  return pick([`Let me think on that, sir.`,`I'd be happy to help, sir.`]);
+}
+
+async function callClaudeAPI(msg){conversationHistory.push({role:'user',content:msg});if(conversationHistory.length>20)conversationHistory=conversationHistory.slice(-20);try{const r=await puter.ai.chat([{role:'system',content:getSysPrompt()},...conversationHistory],{model:'claude-sonnet-4-6',stream:false});const reply=typeof r==='string'?r:r?.message?.content?.[0]?.text||r?.message?.content||r?.text||String(r);conversationHistory.push({role:'assistant',content:reply});return reply;}catch(e){conversationHistory.pop();throw e;}}
+
+// =============================================
+// === INTERRUPT ===
+// =============================================
+function interruptSpeech(){
+  // Wake from shutdown
+  if(isShutdown){
+    isShutdown=false;
+    targetEnergy=1.3;
+    isListening=true;
+    setUIState('listening');
+    speak('At your service, sir.');
+    return;
+  }
+  if(!isSpeaking&&!isThinking)return;
+  interruptFlash.classList.add('active');setTimeout(()=>interruptFlash.classList.remove('active'),400);
+  speechSynthesis.cancel();if(typewriterInterval)clearInterval(typewriterInterval);
+  isSpeaking=false;isThinking=false;processingQuery=false;targetEnergy=1.3;isListening=true;
+  responseEl.classList.remove('visible');transcriptEl.textContent='';setUIState('listening');
+}
+
+// =============================================
+// === SPEECH RECOGNITION ===
+// =============================================
+let recognition=null,recognitionActive=false,processingQuery=false,silenceTimer=null;
+if('webkitSpeechRecognition' in window||'SpeechRecognition' in window){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';recognition.maxAlternatives=1;let pending='';
+recognition.onstart=()=>{recognitionActive=true;isListening=true;setUIState('listening');};
+recognition.onresult=(event)=>{let interim='',final='';for(let i=event.resultIndex;i<event.results.length;i++){const tr=event.results[i][0].transcript;if(event.results[i].isFinal)final+=tr;else interim+=tr;}
+const all=(interim+' '+final).toLowerCase();
+
+// Shutdown mode: ONLY listen for "jarvis" wake word
+if(isShutdown){
+  if(/jarvis/i.test(all)){
+    isShutdown=false;
+    targetEnergy=1.3;
+    isListening=true;
+    isSpeaking=false;isThinking=false;processingQuery=false;
+    pending='';
+    setUIState('listening');
+    speak('At your service, sir.');
+  }
+  return;
+}
+
+// Interrupt speaking when "jarvis" is heard
+if(/jarvis/i.test(all)&&(isSpeaking||processingQuery)){interruptSpeech();pending='';return;}
+if(isSpeaking||processingQuery)return;
+if(interim){transcriptEl.textContent=interim;targetEnergy=1.6;statusEl.textContent='H E A R I N G . . .';statusEl.style.color='rgba(255,180,100,0.7)';}
+if(final.trim()){let c=final.trim().replace(/^jarvis[,.]?\s*/i,'').trim();if(c.length<2)return;pending+=' '+c;transcriptEl.textContent=pending.trim();clearTimeout(silenceTimer);silenceTimer=setTimeout(()=>{if(pending.trim()&&!isSpeaking&&!processingQuery){const q=pending.trim();pending='';processQuery(q);}},1500);}};
+recognition.onerror=(e)=>{if(e.error==='not-allowed')setUIState('blocked');};
+recognition.onend=()=>{recognitionActive=false;setTimeout(()=>{if(!recognitionActive)try{recognition.start();}catch(e){}},300);};}
+
+// =============================================
+// === UI ===
+// =============================================
+const ambientGlow=$('ambient-glow');
+function setUIState(s){
+  micDot.className='';
+  ambientGlow.className='';
+  switch(s){
+    case'listening':micDot.classList.add('active');micLabel.textContent='listening';statusEl.textContent='L I S T E N I N G . . .';statusEl.style.color='rgba(76,168,232,0.5)';vizContainer.classList.remove('active');break;
+    case'thinking':micDot.classList.add('thinking');micLabel.textContent='processing';statusEl.textContent='T H I N K I N G . . .';statusEl.style.color='rgba(255,180,60,0.7)';break;
+    case'speaking':micDot.classList.add('speaking');micLabel.textContent='speaking';statusEl.textContent='S P E A K I N G . . .';statusEl.style.color='rgba(76,168,232,0.9)';vizContainer.classList.add('active');ambientGlow.classList.add('speaking');break;
+    case'blocked':micLabel.textContent='mic blocked';statusEl.textContent='M I C   B L O C K E D';statusEl.style.color='rgba(255,80,80,0.6)';break;
+    case'sleep':ambientGlow.classList.add('sleep');break;
+  }
+}
+
+async function processQuery(text){processingQuery=true;isListening=false;isThinking=true;targetEnergy=2;setUIState('thinking');const r=await getResponse(text);isThinking=false;if(r){Memory.learnResponse(text,r);speak(r);}else{processingQuery=false;isListening=true;targetEnergy=1;setUIState('listening');}}
+
+// =============================================
+// === TTS ===
+// =============================================
+let jarvisVoice=null;
+const voiceRate=0.95;
+const voicePitch=1.05;
+
+function selectVoice(){
+  const v=speechSynthesis.getVoices();if(!v.length)return;
+  const en=v.filter(x=>/en/i.test(x.lang));
+  // JARVIS (Iron Man style): calm, refined British male — like Paul Bettany
+  for(const fn of[
+    n=>/Daniel/i.test(n.name)&&/en-GB/i.test(n.lang),
+    n=>/Oliver/i.test(n.name),
+    n=>/Arthur/i.test(n.name),
+    n=>/Malcolm/i.test(n.name),
+    n=>/George/i.test(n.name)&&/en-GB/i.test(n.lang),
+    n=>/James/i.test(n.name)&&/en-GB/i.test(n.lang),
+    n=>/Google UK English Male/i.test(n.name),
+    n=>/Microsoft George/i.test(n.name),
+    n=>/en-GB/.test(n.lang)&&!/female/i.test(n.name),
+    n=>/Aaron/i.test(n.name),
+    n=>/Evan/i.test(n.name),
+    n=>/Alex\b/i.test(n.name)&&/en/i.test(n.lang),
+    n=>/Google US English/i.test(n.name),
+    n=>/Microsoft David/i.test(n.name),
+    n=>/en-US/.test(n.lang)&&!/female/i.test(n.name),
+    n=>/en/.test(n.lang)&&!/female/i.test(n.name),
+  ]){const m=en.find(fn);if(m){jarvisVoice=m;console.log('Voice:',m.name);return;}}
+  if(en.length)jarvisVoice=en[0];
+}
+function splitChunks(t,m=180){const s=t.match(/[^.!?]+[.!?]+/g)||[t];const c=[];let cur='';for(const x of s){if((cur+x).length>m&&cur){c.push(cur.trim());cur=x;}else cur+=x;}if(cur.trim())c.push(cur.trim());return c;}
+function typewriter(t,el,sp=25){el.textContent='';el.classList.add('visible');let i=0;const iv=setInterval(()=>{if(i<t.length)el.textContent+=t[i++];else clearInterval(iv);},sp);return iv;}
+let typewriterInterval=null;
+function speak(text){isSpeaking=true;isListening=false;targetEnergy=2.5;setUIState('speaking');if(typewriterInterval)clearInterval(typewriterInterval);typewriterInterval=typewriter(text,responseEl,22);if(!jarvisVoice)selectVoice();const chunks=splitChunks(text);let idx=0;
+function next(){if(!isSpeaking)return;if(idx>=chunks.length){onDone();return;}const u=new SpeechSynthesisUtterance(chunks[idx]);u.rate=voiceRate;u.pitch=voicePitch;u.volume=0.9;if(jarvisVoice)u.voice=jarvisVoice;const ka=setInterval(()=>{if(!isSpeaking){clearInterval(ka);return;}if(speechSynthesis.paused)speechSynthesis.resume();},5000);u.onend=()=>{clearInterval(ka);if(!isSpeaking)return;idx++;next();};u.onerror=()=>{clearInterval(ka);if(isSpeaking)onDone();};speechSynthesis.speak(u);}
+const bars=vizContainer.querySelectorAll('.viz-bar');const va=setInterval(()=>{if(!isSpeaking){clearInterval(va);bars.forEach(b=>b.style.height='2px');return;}bars.forEach((b,i)=>b.style.height=(2+Math.random()*12*(.5+.5*Math.sin(Date.now()/150+i*.5)))+'px');},80);
+speechSynthesis.cancel();next();}
+function onDone(){isSpeaking=false;processingQuery=false;targetEnergy=1;isListening=true;setUIState('listening');setTimeout(()=>{transcriptEl.style.opacity='0';setTimeout(()=>{transcriptEl.textContent='';transcriptEl.style.opacity='1';},400);},1500);
+// Fade response text gradually
+setTimeout(()=>{responseEl.style.transition='opacity 2s ease';responseEl.style.opacity='0';setTimeout(()=>{responseEl.classList.remove('visible');responseEl.style.transition='';responseEl.style.opacity='';},2500);},6000);}
+speechSynthesis.onvoiceschanged=selectVoice;selectVoice();
+
+// =============================================
+// === ACTIVATION ===
+// =============================================
+let activated=false;
+function activateJarvis(){if(activated)return;activated=true;
+overlay.classList.add('hidden');setTimeout(()=>overlay.style.display='none',1000);
+speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('');u.volume=0;speechSynthesis.speak(u);
+if(recognition)setTimeout(()=>{try{recognition.start();}catch(e){}},100);
+
+// Start all live data feeds
+setTimeout(async()=>{
+  await Promise.all([refreshAllNews(), MarketHUD.refreshAll(), updateWeatherHUD()]);
+},500);
+
+// Auto-refresh intervals
+setInterval(()=>MarketHUD.refreshAll(), 60*1000);      // Market data every 60s
+setInterval(()=>refreshAllNews(), 5*60*1000);           // News every 5 min
+setInterval(()=>updateWeatherHUD(), 10*60*1000);        // Weather every 10 min
+
+const name=Memory.getGreeting();
+setTimeout(()=>{selectVoice();
+const ukH=new Date(new Date().toLocaleString('en-US',{timeZone:'Europe/London'})).getHours();
+const ukGreet=ukH<12?'Good morning':ukH<17?'Good afternoon':'Good evening';
+speak(`${ukGreet}, sir.`);},700);}
+overlay.addEventListener('click',activateJarvis);document.addEventListener('keydown',e=>{if(!activated&&e.code!=='Escape')activateJarvis();});
+
+// Typing mode handlers
+const typeBar=$('type-bar'),typeInput=$('type-input'),typeSubmit=$('type-submit');
+function submitTypedQuery(){const q=typeInput.value.trim();if(!q)return;typeInput.value='';processQuery(q);}
+typeSubmit.addEventListener('click',submitTypedQuery);
+typeInput.addEventListener('keydown',e=>{if(e.key==='Enter')submitTypedQuery();if(e.key==='Escape'){typeBar.classList.remove('visible');typeInput.blur();}});
+
+// Press T to toggle typing mode, Escape to close
+document.addEventListener('keydown',e=>{
+  if(e.target===typeInput)return;
+  if(e.key==='t'||e.key==='T'){e.preventDefault();typeBar.classList.toggle('visible');if(typeBar.classList.contains('visible'))setTimeout(()=>typeInput.focus(),100);}
+  if(e.key==='Escape'&&typeBar.classList.contains('visible')){typeBar.classList.remove('visible');}
+  // Press F for fullscreen
+  if(e.key==='f'||e.key==='F'){if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen();}
+});
+</script>
+</body>
+</html>
